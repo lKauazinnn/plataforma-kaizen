@@ -7,6 +7,7 @@ import { AuthRequest } from '../middlewares/auth.middleware';
 import { extractQuestionsFromPdf } from '../lib/pdf';
 import { extractVisualRegions, VisualRegion } from '../lib/pdf-visuals';
 import { classifyQuestion, extractQuestionFromImage, suggestGabarito } from '../lib/ai';
+import { createCropper } from '../lib/image-crop';
 import { logAudit } from '../lib/audit';
 
 const VISUAL_BUCKET = 'question-visuals';
@@ -148,22 +149,73 @@ export class ImportController {
           const catalog = await this.fetchCatalogForOrg(req.organizationId!);
           const extractedList = await extractQuestionFromImage(file.buffer, file.mimetype, catalog);
 
-          // Faz upload da imagem original para o storage do Supabase
-          const ext = file.originalname.split('.').pop() || 'png';
-          const visualKey = `img-${Date.now()}.${ext}`;
-           const visualUrl = await this.uploadVisual(req.organizationId!, job.id, visualKey, file.buffer, file.mimetype);
+          // Só as figuras viram imagem. Anexar a captura inteira à questão
+          // repetia embaixo do enunciado tudo o que já tinha virado texto — e
+          // ainda trazia junto as outras questões da tela, o cabeçalho do site
+          // e os botões. O aluno precisa ver o mapa, não o print.
+          const cropper = await createCropper(file.buffer).catch((cropError) => {
+            console.error('[import:image] falha ao abrir a imagem para recorte:', cropError);
+            return null;
+          });
 
+          // A captura original só sobe se algum recorte falhar: nesse caso é
+          // melhor o professor ver a figura dentro do print do que perdê-la.
+          let originalUrl: string | null | undefined;
+          const uploadOriginal = async () => {
+            if (originalUrl === undefined) {
+              const ext = file.originalname.split('.').pop() || 'png';
+              originalUrl = await this.uploadVisual(
+                req.organizationId!,
+                job.id,
+                `original-${Date.now()}.${ext}`,
+                file.buffer,
+                file.mimetype
+              );
+            }
+            return originalUrl;
+          };
+
+          let recortesFalhos = 0;
           const inserted: any[] = [];
           for (const [index, q] of extractedList.entries()) {
-            const images = visualUrl
-              ? [
-                  {
-                    url: visualUrl,
-                    caption: `Imagem da questão: ${file.originalname}`,
-                    source: 'image-upload',
-                  },
-                ]
-              : [];
+            const numero = q.number ?? index + 1;
+            const images: Array<Record<string, unknown>> = [];
+            let recorteFalhou = false;
+
+            for (const [figIndex, figure] of q.figures.entries()) {
+              const crop = cropper?.crop(figure.box) ?? null;
+              const url = crop
+                ? await this.uploadVisual(
+                    req.organizationId!,
+                    job.id,
+                    // O índice, e não o número da questão: numeração repetida
+                    // na mesma captura faria um recorte sobrescrever o outro.
+                    `q${index + 1}-fig${figIndex + 1}.png`,
+                    crop.buffer
+                  )
+                : null;
+
+              if (!url) {
+                recorteFalhou = true;
+                continue;
+              }
+              images.push({ url, caption: figure.caption ?? undefined, source: 'image-figure' });
+            }
+
+            // A transcrição viu figura e nenhum recorte saiu: o professor
+            // recebe a captura inteira em vez de uma questão que perdeu o
+            // mapa sem ninguém avisar.
+            if (recorteFalhou || (q.hasFigure && images.length === 0)) {
+              recortesFalhos++;
+              const url = await uploadOriginal();
+              if (url) {
+                images.push({
+                  url,
+                  caption: 'Não foi possível recortar a figura — imagem enviada por inteiro.',
+                  source: 'image-upload',
+                });
+              }
+            }
 
             const { data: created, error: qErr } = await supabase
               .from('questions')
@@ -172,7 +224,7 @@ export class ImportController {
                 organizationId: req.organizationId!,
                 importJobId: job.id,
                 createdBy: req.userId!,
-                number: q.number ?? index + 1,
+                number: numero,
                 statement: q.statement,
                 alternatives: q.alternatives || [],
                 images,
@@ -212,7 +264,14 @@ export class ImportController {
             details: { fileName: file.originalname, totalQuestions: inserted.length, format: 'image' },
           });
 
-          return res.status(201).json({ job, questions: inserted });
+          return res.status(201).json({
+            job,
+            questions: inserted,
+            warnImages:
+              recortesFalhos > 0
+                ? `${recortesFalhos} questão(ões) tiveram figura que não pôde ser recortada — a imagem original foi anexada inteira. Confira antes de aprovar.`
+                : undefined,
+          });
         } catch (imgError: any) {
           console.error('[import:image] falha ao processar imagem:', imgError);
           await supabase

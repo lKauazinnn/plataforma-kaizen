@@ -63,6 +63,23 @@ auth (redefinição de senha). A segurança é feita em duas camadas:
    mantendo a cadeia disciplina → conteúdo → tópico → subtópico.
 4. As questões entram como `pending` e o professor revisa.
 
+### Importação por imagem (print ou foto)
+
+Quando o arquivo é PNG/JPG/WebP quem extrai é o Gemini, em **duas chamadas**:
+
+1. **Transcrição** — enunciado e alternativas viram TEXTO, sem a interface do site (botões,
+   cabeçalho com banca/órgão, código da questão, menus). Cada questão informa se tem figura
+   (`hasFigure`) e qual é a legenda impressa junto dela.
+2. **Detecção** — só acontece se a transcrição apontar figura. O modelo devolve a caixa
+   (`box_2d`, normalizada em 0–1000) de cada mapa/gráfico/diagrama e a qual questão ela
+   pertence. Pedir transcrição e coordenadas na mesma resposta degrada a geometria: na captura
+   de teste a caixa do mapa saiu ~400 px acima dele, em cima dos botões da questão anterior.
+
+`src/lib/image-crop.ts` recorta cada caixa da imagem original (`@napi-rs/canvas`), apara a linha
+de texto que tenha vazado para a borda do recorte e só esse PNG é anexado à questão — o
+enunciado já está em texto. A captura inteira só sobe quando a questão tem figura e nenhum
+recorte sai, com aviso na tela de importação.
+
 ## Revisão de questões (B14-B18)
 
 - Lista por status (`GET /questions?status=pending|approved|rejected|all`).
