@@ -1,9 +1,9 @@
 import { ChangeEvent, DragEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileUp, AlertTriangle, FileText, CheckCircle2, Loader2, XCircle, RefreshCw } from 'lucide-react';
+import { FileUp, AlertTriangle, FileText, CheckCircle2, Loader2, XCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { api, apiError } from '../../services/api';
 import { ImportJob, Question } from '../../types';
-import { PageHeader, Card, Button, Spinner, Badge } from '../../components/ui';
+import { PageHeader, Card, Button, Spinner, Badge, ConfirmDialog } from '../../components/ui';
 import { QuestionView } from '../../components/QuestionView';
 
 const jobStatusLabel: Record<ImportJob['status'], string> = {
@@ -40,6 +40,29 @@ export default function ImportPdf() {
   const [result, setResult] = useState<{ questions: Question[]; warnImages?: string } | null>(null);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState<Question | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Descartar aqui mesmo o que a extração trouxe errado (questão duplicada,
+  // pedaço de outra prova): sem isso o professor só conseguia apagar depois,
+  // caçando a questão na fila de revisão.
+  const removeQuestion = async () => {
+    const alvo = confirmDelete;
+    if (!alvo) return;
+    setConfirmDelete(null);
+    setError('');
+    setDeletingId(alvo.id);
+    try {
+      await api.delete(`/questions/${alvo.id}`);
+      setResult((current) =>
+        current ? { ...current, questions: current.questions.filter((q) => q.id !== alvo.id) } : current
+      );
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // B09: o status do job de importação precisa ficar visível, inclusive
   // depois de recarregar a página.
@@ -157,9 +180,19 @@ export default function ImportPdf() {
                     {q.gabarito && <Badge tone="teal">Gabarito: {q.gabarito.toUpperCase()}</Badge>}
                     {q.classificationSource === 'ai' && <Badge tone="blue">IA</Badge>}
                   </div>
-                  <Link to={`/professor/questoes/${q.id}/revisar`} className="text-sm font-semibold text-primary-300 hover:text-primary-200">
-                    Revisar →
-                  </Link>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => setConfirmDelete(q)}
+                      disabled={deletingId === q.id}
+                      className="p-1.5 rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
+                      title="Excluir esta questão"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                    <Link to={`/professor/questoes/${q.id}/revisar`} className="text-sm font-semibold text-primary-300 hover:text-primary-200">
+                      Revisar →
+                    </Link>
+                  </div>
                 </div>
                 <QuestionView question={q} compact />
               </Card>
@@ -223,6 +256,22 @@ export default function ImportPdf() {
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={removeQuestion}
+        title="Excluir questão"
+        message={
+          confirmDelete
+            ? `Esta ação não pode ser desfeita. ${
+                confirmDelete.number ? `A questão ${confirmDelete.number}` : 'A questão'
+              } será removida permanentemente desta importação.`
+            : ''
+        }
+        confirmLabel="Excluir"
+        danger
+      />
     </div>
   );
 }

@@ -22,10 +22,10 @@
 
 ### Pendências conhecidas
 
-- **IA desligada.** `GEMINI_API_KEY` e `GROQ_API_KEY` estão vazias, então não há
-  classificação automática de questões nem importação a partir de imagem (esta
-  última depende exclusivamente da Gemini). Para ligar:
-  `cd backend && npx vercel env add GEMINI_API_KEY production` e redeploy.
+- **`GROQ_API_KEY` vazia.** A `GEMINI_API_KEY` já está em produção, então a
+  classificação automática e a importação a partir de imagem funcionam — o Groq é
+  só o fallback de classificação/gabarito quando a Gemini falha. Para adicionar:
+  `cd backend && npx vercel env add GROQ_API_KEY production` e redeploy.
 - **`OWNER_EMAIL` vazia**, então nenhum e-mail é tratado como admin/root.
 - **Supabase → Authentication → URL Configuration** ainda precisa apontar para o
   domínio de produção (passo 5), senão a recuperação de senha manda link para

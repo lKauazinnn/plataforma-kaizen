@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { FileQuestion, ChevronRight, CheckCheck, CheckCircle2, Search, X, AlertTriangle, FileUp, FolderTree } from 'lucide-react';
+import { FileQuestion, ChevronRight, CheckCheck, CheckCircle2, Search, X, AlertTriangle, FileUp, FolderTree, Trash2 } from 'lucide-react';
 import { api, apiError } from '../../services/api';
 import { Question } from '../../types';
 import { PageHeader, Card, Badge, Spinner, EmptyState, Button, Input, ConfirmDialog } from '../../components/ui';
@@ -27,6 +27,8 @@ export default function Questions() {
   const [query, setQuery] = useState('');
   const [confirmBatch, setConfirmBatch] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Question | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const approveOne = async (questionId: string) => {
     setBatchError('');
@@ -38,6 +40,26 @@ export default function Questions() {
       setBatchError(apiError(err));
     } finally {
       setApprovingId(null);
+    }
+  };
+
+  // Excluir direto da lista: limpar o resto de uma importação exigia abrir e
+  // voltar da tela de revisão questão por questão. A API é a mesma e continua
+  // recusando (409) questão já usada em simulado — o motivo vai para o aviso
+  // do topo, porque o diálogo já fechou quando a resposta chega.
+  const removeOne = async () => {
+    const alvo = confirmDelete;
+    if (!alvo) return;
+    setConfirmDelete(null);
+    setBatchError('');
+    setDeletingId(alvo.id);
+    try {
+      await api.delete(`/questions/${alvo.id}`);
+      load();
+    } catch (err) {
+      setBatchError(apiError(err));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -260,6 +282,14 @@ export default function Questions() {
                       <CheckCircle2 size={18} />
                     </button>
                   )}
+                  <button
+                    onClick={() => setConfirmDelete(q)}
+                    disabled={deletingId === q.id}
+                    className="p-2 rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
+                    title="Excluir esta questão"
+                  >
+                    <Trash2 size={18} />
+                  </button>
                   <Link to={`/professor/questoes/${q.id}/revisar`} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-primary-300" title="Revisar">
                     <ChevronRight size={18} />
                   </Link>
@@ -281,6 +311,24 @@ export default function Questions() {
             : 'As questões pendentes válidas entrarão no banco aprovado. Questões com dados incompletos ficarão marcadas para correção.'
         }
         confirmLabel={tab === 'rejected' ? 'Revalidar' : 'Aprovar todas'}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={removeOne}
+        title="Excluir questão"
+        message={
+          confirmDelete
+            ? `Esta ação não pode ser desfeita. ${
+                confirmDelete.number ? `A questão ${confirmDelete.number}` : 'A questão'
+              } "${confirmDelete.statement.slice(0, 80)}${
+                confirmDelete.statement.length > 80 ? '…' : ''
+              }" será removida permanentemente.`
+            : ''
+        }
+        confirmLabel="Excluir"
+        danger
       />
     </div>
   );
