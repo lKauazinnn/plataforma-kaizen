@@ -424,9 +424,11 @@ export class ImportController {
             ? `Falha ao recortar os visuais deste PDF (${visualFailure}). As questões foram importadas só com o texto — revise antes de aprovar.`
             : matcher.unmatchedCount > 0
             ? `${matcher.unmatchedCount} recorte(s) visual(is) deste PDF não puderam ser associados a uma questão. Confira as questões com figura antes de aprovar.`
-            : regions.length === 0
-            ? 'Não foi possível extrair automaticamente o visual de cada questão deste PDF. Revise cada questão visualmente antes de aprovar.'
-            : undefined,
+            : // Zero figuras deixou de ser sintoma de falha: o extrator agora
+              // recorta só gráfico/mapa/desenho, e prova só de texto não tem
+              // nenhum. Avisar aqui faria a maioria das importações abrir com
+              // um alerta que não quer dizer nada.
+              undefined,
         });
       } catch (extractError) {
         console.error('Erro na extração:', extractError);

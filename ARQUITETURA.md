@@ -59,9 +59,15 @@ auth (redefinição de senha). A segurança é feita em duas camadas:
 2. `pdf-parse` extrai o texto; o parser (`src/lib/pdf.ts`) separa as questões, identifica o
    gabarito (`respostas: ...`), preserva referências visuais (imagens/gráficos/mapas) e
    registra de onde veio o gabarito (`gabaritoOrigin`) e a confiança (`gabaritoConfidence`).
-3. Para cada questão, `src/lib/ai.ts` tenta classificar no catálogo via Gemini/Groq (opcional),
+3. `src/lib/pdf-visuals.ts` renderiza cada página e recorta **só as figuras**. A figura é achada
+   por exclusão: as coordenadas do texto (pdf.js) marcam quais linhas da página são escrita, e o
+   que sobra com traço no render é desenho. Questão só de texto não recebe imagem — antes o
+   recorte era o bloco inteiro da questão, então o enunciado aparecia escrito e de novo dentro da
+   imagem. Tabela montada com texto (números em células) continua no enunciado como texto: para o
+   detector ela é escrita, não desenho.
+4. Para cada questão, `src/lib/ai.ts` tenta classificar no catálogo via Gemini/Groq (opcional),
    mantendo a cadeia disciplina → conteúdo → tópico → subtópico.
-4. As questões entram como `pending` e o professor revisa.
+5. As questões entram como `pending` e o professor revisa.
 
 ### Importação por imagem (print ou foto)
 
